@@ -1,0 +1,144 @@
+---
+title: "DATA608 - Story5"
+author: "Glen Dale Davis"
+date: "2023-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Packages:
+
+```{r packages, warning = FALSE, message = FALSE}
+library(tidyverse)
+
+```
+
+## Data:
+
+### Temperature:
+
+```{r temperature}
+my_url1 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/global_land_ocean_temp_index.csv"
+temperature_df <- read.csv(my_url1, skip = 1)
+temperature_df <- temperature_df |>
+    filter(Year >= 1980)
+
+```
+
+### Tornadoes:
+
+```{r tornadoes}
+my_url2 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/1950-2022_actual_tornadoes.csv"
+tornadoes_df <- read.csv(my_url2, skip = 2)
+tornadoes_df <- tornadoes_df |>
+    filter(yr >= 1980)
+
+```
+
+```{r tornadoes_counts}
+
+
+```
+
+### Hurricanes/Typhoons:
+
+```{r hurricanes_typhoons}
+my_url3 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.EP.list.v04r00_since1980.csv"
+my_url4 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NA.list.v04r00_since1980.csv"
+my_url5 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NI.list.v04r00_since1980.csv"
+my_url6 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SA.list.v04r00_since1980.csv"
+my_url7 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SI.list.v04r00_since1980.csv"
+my_url8 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SP.list.v04r00_since1980.csv"
+my_url9 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.WP.list.v04r00_since1980.csv"
+hurr_typh_EP_df <- read.csv(my_url3)
+hurr_typh_NA_df <- read.csv(my_url4)
+hurr_typh_NI_df <- read.csv(my_url5)
+hurr_typh_SA_df <- read.csv(my_url6)
+hurr_typh_SI_df <- read.csv(my_url7)
+hurr_typh_SP_df <- read.csv(my_url8)
+hurr_typh_WP_df <- read.csv(my_url9)
+hurr_typh_df_list <- list(hurr_typh_EP_df, hurr_typh_NA_df, hurr_typh_NI_df,
+                          hurr_typh_SA_df, hurr_typh_SI_df, hurr_typh_SP_df,
+                          hurr_typh_WP_df)
+col_not_all_na <- function(x){
+    any(!is.na(x))
+}
+copy <- hurr_typh_df_list
+for (i in 1:length(copy)){
+    hurr_typh_df_list[[i]] <- hurr_typh_df_list[[i]] |>
+        select(where(col_not_all_na)) |>
+        filter(SEASON < 2023)
+}
+rm(copy, hurr_typh_EP_df, hurr_typh_NA_df, hurr_typh_NI_df, hurr_typh_SA_df,
+   hurr_typh_SI_df, hurr_typh_SP_df, hurr_typh_WP_df)
+
+```
+
+```{r hurricanes_typhoons_levels}
+#Look through the various columns that indicate a storm is hurricane/typhoon level
+col_names <- c("USA_STATUS", "TOKYO_GRADE", "CMA_CAT", "HKO_CAT",
+               "NEWDELHI_GRADE", "REUNION_TYPE", "BOM_TYPE", "TD9636_STAGE",
+               "MLC_CLASS")
+usa_status <- c("TY", "ST", "HU", "HR")
+tokyo_grade <- 5 #Typhoon (TY)
+cma_cat <- c(4, 5, 6) #Typhoon, Severe Typhoon, & Super Typhoon
+hko_cat <- c("T", "ST", "SuperT") #Typhoon, Severe Typhoon, & Super Typhoon
+newdelhi_grade <- c("VSCS", "SCS") #Very Severe Cyclonic Storm, equivalent to Typhoon, & Super Cyclonic Storm, equivalent to Severe and Super Typhoons
+reunion_type <- 4 #Equivalent to Typhoon
+bom_type <- 40 #Equivalent to Typhoon
+td9636_stage <- 4 #Hurricane
+mlc_class <- "HU" #Hurricane
+col_levels <- list(usa_status, tokyo_grade, cma_cat, hko_cat, newdelhi_grade,
+                   reunion_type, bom_type, td9636_stage, mlc_class)
+names(col_levels) <- col_names
+copy <- hurr_typh_df_list
+for (i in 1:length(copy)){
+    df_old <- hurr_typh_df_list[[i]]
+    df_new <- df_old[c(), ]
+    for (j in 1:length(col_levels)){
+        col_name <- names(col_levels[j])
+        df_cols <- colnames(df_old)
+        if (!col_name %in% df_cols){
+            next
+        }else{
+            df_sub <- df_old |>
+                filter(!!as.symbol(col_name) %in% col_levels[[j]])
+            if (nrow(df_sub) > 0){
+                df_new <- df_new |>
+                    bind_rows(df_sub)
+            }else{
+                next
+            }
+        }
+    }
+    hurr_typh_df_list[[i]] <- df_new
+}
+rm(copy, df_old, df_sub, df_new)
+
+```
+
+```{r hurricanes_typhoons_counts}
+#Count unique hurricane/typhoon-level storms per season
+hurr_typh_unique_df <- as.data.frame(matrix(nrow = 0, ncol = 4))
+cols <- c("BASIN", "SEASON", "SID", "NAME")
+colnames(hurr_typh_unique_df) <- cols
+hurr_typh_unique_df[] <- lapply(hurr_typh_unique_df, as.character)
+hurr_typh_unique_df$SEASON <- as.integer(hurr_typh_unique_df$SEASON)
+for (i in 1:length(hurr_typh_df_list)){
+    current <- hurr_typh_df_list[[i]] |>
+        select(all_of(cols)) |>
+        distinct()
+    hurr_typh_unique_df <- hurr_typh_unique_df |>
+        bind_rows(current)
+}
+hurr_typh_counts_df <- hurr_typh_unique_df |>
+    group_by(SEASON) |>
+    summarize(Count = n())
+colnames(hurr_typh_counts_df) <- c("Year", "Count")
+
+```
+
+## Visualizations:
