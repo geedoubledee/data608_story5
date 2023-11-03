@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r packages, warning = FALSE, message = FALSE}
 library(tidyverse)
+library(zoo)
 
 ```
 
@@ -33,33 +34,85 @@ temperature_df <- temperature_df |>
 ```{r tornadoes}
 my_url2 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/1950-2022_actual_tornadoes.csv"
 tornadoes_df <- read.csv(my_url2, skip = 2)
-tornadoes_df <- tornadoes_df |>
-    filter(yr >= 1980)
 
 ```
 
-```{r tornadoes_counts}
+```{r tornadoes_summaries}
+mil <- 1000000
+tornadoes_before_1996 <- tornadoes_df |>
+    filter(yr < 1996) |>
+    mutate(loss = case_when(
+        loss < 1 ~ 0,
+        loss < 2 ~ 50 / mil,
+        loss < 3 ~ 275 / mil,
+        loss < 4 ~ 2750 / mil,
+        loss < 5 ~ 27500 / mil,
+        loss < 6 ~ 275000 / mil,
+        loss < 7 ~ 2750000 / mil,
+        loss < 8 ~ 27500000 / mil,
+        loss < 9 ~ 275000000 / mil))
+tornadoes_df <- tornadoes_df |>
+    filter(yr >= 1996) |>
+    bind_rows(tornadoes_before_1996)
+tornadoes_state_summary_df <- tornadoes_df |>
+    filter(sn == 1) |>
+    group_by(st, yr) |>
+    summarize(Injuries_Sum = sum(inj),
+              Fatalities_Sum = sum(fat),
+              Property_Loss_Sum = sum(loss) * mil,
+              Count = n())
+tornadoes_national_summary_df <- tornadoes_state_summary_df |>
+    group_by(yr) |>
+    summarize(Total_Injuries = sum(Injuries_Sum),
+           Total_Fatalities = sum(Fatalities_Sum),
+           Total_Property_Loss = sum(Property_Loss_Sum),
+           Total_Count = sum(Count))
 
+```
+
+```{r tornadoes_rolling_average}
+tornadoes_national_summary_df <- tornadoes_national_summary_df |>
+    arrange(desc(yr)) |>
+    mutate(Injuries_30YrAvg = round(zoo::rollmean(Total_Injuries, k = 30,
+                                                  fill = NA,
+                                                  align = "left"), 0),
+           Fatalities_30YrAvg = round(zoo::rollmean(Total_Fatalities, k = 30,
+                                                    fill = NA,
+                                                    align = "left"), 0),
+           Property_Loss_30YrAvg = zoo::rollmean(Total_Property_Loss,
+                                                       k = 30, fill = NA,
+                                                       align = "left"),
+           Count_30YrAvg = round(zoo::rollmean(Total_Count, k = 30,
+                                               fill = NA, align = "left"), 0))
+
+```
+
+```{r tornadoes_anomalies}
+tornadoes_national_summary_df <- tornadoes_national_summary_df |>
+    mutate(Injuries_Diff = Total_Injuries - Injuries_30YrAvg,
+           Fatalities_Diff = Total_Fatalities - Fatalities_30YrAvg,
+           Property_Loss_Diff = Total_Property_Loss - Property_Loss_30YrAvg,
+           Count_Diff = Total_Count - Count_30YrAvg)
 
 ```
 
 ### Hurricanes/Typhoons:
 
 ```{r hurricanes_typhoons}
-my_url3 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.EP.list.v04r00_since1980.csv"
-my_url4 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NA.list.v04r00_since1980.csv"
-my_url5 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NI.list.v04r00_since1980.csv"
-my_url6 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SA.list.v04r00_since1980.csv"
-my_url7 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SI.list.v04r00_since1980.csv"
-my_url8 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SP.list.v04r00_since1980.csv"
-my_url9 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.WP.list.v04r00_since1980.csv"
-hurr_typh_EP_df <- read.csv(my_url3)
-hurr_typh_NA_df <- read.csv(my_url4)
-hurr_typh_NI_df <- read.csv(my_url5)
-hurr_typh_SA_df <- read.csv(my_url6)
-hurr_typh_SI_df <- read.csv(my_url7)
-hurr_typh_SP_df <- read.csv(my_url8)
-hurr_typh_WP_df <- read.csv(my_url9)
+my_url3 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.EP.list.v04r00_since1950.csv"
+my_url4 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NA.list.v04r00_since1950.csv"
+my_url5 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.NI.list.v04r00_since1950.csv"
+my_url6 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SA.list.v04r00_since1950.csv"
+my_url7 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SI.list.v04r00_since1950.csv"
+my_url8 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.SP.list.v04r00_since1950.csv"
+my_url9 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/ibtracs.WP.list.v04r00_since1950.csv"
+hurr_typh_EP_df <- read.csv(my_url3, na.strings = c())
+hurr_typh_NA_df <- read.csv(my_url4, na.strings = c())
+hurr_typh_NI_df <- read.csv(my_url5, na.strings = c())
+hurr_typh_SA_df <- read.csv(my_url6, na.strings = c())
+hurr_typh_SI_df <- read.csv(my_url7, na.strings = c())
+hurr_typh_SP_df <- read.csv(my_url8, na.strings = c())
+hurr_typh_WP_df <- read.csv(my_url9, na.strings = c())
 hurr_typh_df_list <- list(hurr_typh_EP_df, hurr_typh_NA_df, hurr_typh_NI_df,
                           hurr_typh_SA_df, hurr_typh_SI_df, hurr_typh_SP_df,
                           hurr_typh_WP_df)
@@ -80,8 +133,8 @@ rm(copy, hurr_typh_EP_df, hurr_typh_NA_df, hurr_typh_NI_df, hurr_typh_SA_df,
 ```{r hurricanes_typhoons_levels}
 #Look through the various columns that indicate a storm is hurricane/typhoon level
 col_names <- c("USA_STATUS", "TOKYO_GRADE", "CMA_CAT", "HKO_CAT",
-               "NEWDELHI_GRADE", "REUNION_TYPE", "BOM_TYPE", "TD9636_STAGE",
-               "MLC_CLASS")
+               "NEWDELHI_GRADE", "REUNION_TYPE", "BOM_TYPE", "NADI_CAT",
+               "TD9636_STAGE", "MLC_CLASS")
 usa_status <- c("TY", "ST", "HU", "HR")
 tokyo_grade <- 5 #Typhoon (TY)
 cma_cat <- c(4, 5, 6) #Typhoon, Severe Typhoon, & Super Typhoon
@@ -89,10 +142,11 @@ hko_cat <- c("T", "ST", "SuperT") #Typhoon, Severe Typhoon, & Super Typhoon
 newdelhi_grade <- c("VSCS", "SCS") #Very Severe Cyclonic Storm, equivalent to Typhoon, & Super Cyclonic Storm, equivalent to Severe and Super Typhoons
 reunion_type <- 4 #Equivalent to Typhoon
 bom_type <- 40 #Equivalent to Typhoon
+nadi_cat <- c(3, 4, 5) #Typhoon & Up
 td9636_stage <- 4 #Hurricane
 mlc_class <- "HU" #Hurricane
 col_levels <- list(usa_status, tokyo_grade, cma_cat, hko_cat, newdelhi_grade,
-                   reunion_type, bom_type, td9636_stage, mlc_class)
+                   reunion_type, bom_type, nadi_cat, td9636_stage, mlc_class)
 names(col_levels) <- col_names
 copy <- hurr_typh_df_list
 for (i in 1:length(copy)){
@@ -129,12 +183,13 @@ hurr_typh_unique_df[] <- lapply(hurr_typh_unique_df, as.character)
 hurr_typh_unique_df$SEASON <- as.integer(hurr_typh_unique_df$SEASON)
 for (i in 1:length(hurr_typh_df_list)){
     current <- hurr_typh_df_list[[i]] |>
-        select(all_of(cols)) |>
-        distinct()
+        select(all_of(cols))
     hurr_typh_unique_df <- hurr_typh_unique_df |>
-        bind_rows(current)
+        bind_rows(current) |>
+        distinct()
 }
 hurr_typh_counts_df <- hurr_typh_unique_df |>
+    distinct(SID, .keep_all = TRUE) |>
     group_by(SEASON) |>
     summarize(Count = n())
 colnames(hurr_typh_counts_df) <- c("Year", "Count")
