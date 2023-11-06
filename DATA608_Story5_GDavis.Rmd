@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r packages, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(zoo)
+library(fpp3)
+library(cowplot)
+library(RColorBrewer)
+library(plyr, include.only = "round_any")
 
 ```
 
@@ -26,6 +30,8 @@ my_url1 <- "https://github.com/geedoubledee/data608_story5/raw/main/data/global_
 temperature_df <- read.csv(my_url1, skip = 1)
 temperature_df <- temperature_df |>
     filter(Year >= 1980)
+cols <- c("Year", "Temp_Anomaly_deg_C", "Smoothed")
+colnames(temperature_df) <- cols
 
 ```
 
@@ -70,7 +76,7 @@ tornadoes_national_summary_df <- tornadoes_state_summary_df |>
 
 ```
 
-```{r tornadoes_rolling_average}
+```{r tornadoes_moving_averages}
 tornadoes_national_summary_df <- tornadoes_national_summary_df |>
     arrange(desc(yr)) |>
     mutate(Injuries_30YrAvg = round(zoo::rollmean(Total_Injuries, k = 30,
@@ -89,10 +95,11 @@ tornadoes_national_summary_df <- tornadoes_national_summary_df |>
 
 ```{r tornadoes_anomalies}
 tornadoes_national_summary_df <- tornadoes_national_summary_df |>
-    mutate(Injuries_Diff = Total_Injuries - Injuries_30YrAvg,
-           Fatalities_Diff = Total_Fatalities - Fatalities_30YrAvg,
-           Property_Loss_Diff = Total_Property_Loss - Property_Loss_30YrAvg,
-           Count_Diff = Total_Count - Count_30YrAvg)
+    mutate(Torn_Injuries_Diff = Total_Injuries - Injuries_30YrAvg,
+           Torn_Fatalities_Diff = Total_Fatalities - Fatalities_30YrAvg,
+           Torn_Property_Loss_Diff = Total_Property_Loss - Property_Loss_30YrAvg,
+           Torn_Count_Diff = Total_Count - Count_30YrAvg,
+           Torn_Percent_Count_Diff = Torn_Count_Diff / Count_30YrAvg)
 
 ```
 
@@ -196,4 +203,174 @@ colnames(hurr_typh_counts_df) <- c("Year", "Count")
 
 ```
 
+```{r hurricanes_typhoons_moving_averages}
+hurr_typh_counts_df <- hurr_typh_counts_df |>
+    arrange(desc(Year)) |>
+    mutate(Count_30YrAvg = round(zoo::rollmean(Count, k = 30, fill = NA,
+                                                  align = "left"), 0))
+
+```
+
+```{r hurricanes_typhoons_anomalies}
+hurr_typh_counts_df <- hurr_typh_counts_df |>
+    mutate(Hurr_Typh_Count_Diff = Count - Count_30YrAvg,
+           Hurr_Typh_Percent_Count_Diff = Hurr_Typh_Count_Diff / Count_30YrAvg)
+
+```
+
 ## Visualizations:
+
+```{r vis0}
+palette <- brewer.pal(n = 12, name = "Paired")
+keep1 <- c("yr", "Torn_Injuries_Diff", "Torn_Fatalities_Diff",
+          "Torn_Property_Loss_Diff", "Torn_Count_Diff",
+          "Torn_Percent_Count_Diff")
+keep2 <- c("Year", "Hurr_Typh_Count_Diff", "Hurr_Typh_Percent_Count_Diff")
+visualization_df <- temperature_df |>
+    merge(tornadoes_national_summary_df |> select(all_of(keep1)), by.x = "Year",
+          by.y = "yr") |>
+    merge(hurr_typh_counts_df |> select(all_of(keep2)), by = "Year") |>
+    arrange(desc(Year))
+
+```
+
+```{r vis1}
+p1a <- visualization_df |>
+    ggplot(aes(x = Year, y = Temp_Anomaly_deg_C)) +
+    geom_line() +
+    scale_y_continuous(breaks = seq(0, 1.25, 0.25), limits = c(0, 1.25)) +
+    scale_x_continuous(breaks = seq(1980, 2020, 5), limits = c(1980, 2027)) +
+    theme_minimal() +
+    theme(legend.position = "none",
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.x = element_blank()) +
+    labs(y = expression("Temp Anomalies ("*~degree*C*")"))
+keep3 <- c("Year", "Torn_Percent_Count_Diff", "Hurr_Typh_Percent_Count_Diff")
+rename <- c("Year", "Tornadoes", "Hurr/Typh")
+piv <- c("Tornadoes", "Hurr/Typh")
+visualization_df_piv <- visualization_df |>
+    select(all_of(keep3))
+colnames(visualization_df_piv) <- rename
+visualization_df_piv <- visualization_df_piv |>
+    pivot_longer(cols = all_of(piv), names_to = "Variable",
+                 values_to = "Value") |>
+    mutate(Average = ifelse(Value >= 0, "Above", "Below"))
+last <- visualization_df_piv |>
+    filter(Year == 2022)
+p1b <- visualization_df_piv |>
+    ggplot() +
+    geom_line(aes(x = Year, y = round(Value * 100, 2), color = Variable)) +
+    geom_text(data = last, aes(x = Year + 3.5, y = round(Value * 100, 2),
+                               label = Variable, color = Variable)) + 
+    scale_y_continuous(breaks = seq(-75, 100, 25), limits = c(-75, 100)) +
+    scale_x_continuous(breaks = seq(1980, 2020, 5), limits = c(1980, 2027)) +
+    labs(y = "Storm Anomalies (%)") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_blank()) +
+    scale_color_manual(values = palette[c(2, 8)])
+p1c <- plot_grid(p1b, p1a, align = "v", axis = "l", ncol = 1,
+                rel_heights = c(3, 2))
+title_str <- "Gap Between Global Land/Sea Temp & 30-Yr Average Grows While\nTornado & Hurricane/Typhoon Occurrence Against 30-Yr Average Oscillates"
+title <- ggdraw() + 
+    draw_label(title_str)
+p1 <- plot_grid(title, p1c, ncol = 1, rel_heights = c(0.1, 1))
+p1
+
+```
+
+```{r vis2}
+keep1 <- c("yr", "Total_Fatalities", "Total_Property_Loss", "Total_Count")
+keep2 <- c("Year", "Count")
+visualization_df2 <- temperature_df |>
+    merge(tornadoes_national_summary_df |> select(all_of(keep1)), by.x = "Year",
+          by.y = "yr") |>
+    merge(hurr_typh_counts_df |> select(all_of(keep2)), by = "Year") |>
+    arrange(desc(Year))
+rename <- c("Year", "Temp_Anomaly_deg_C", "Smoothed", "Tornado_Fatalities",
+           "Tornado_Property_Loss", "Tornado_Count", "Hurr_Typh_Count")
+colnames(visualization_df2) <- rename
+summary(visualization_df2)
+
+```
+
+``` {r vis3}
+rename <- c("Year", "Temp_Anomaly_deg_C", "Smoothed", "Tornado_Fatalities",
+            "Tornado_Property_Loss", "Tornadoes", "Hurr/Typh")
+piv <- c("Tornadoes", "Hurr/Typh")
+colnames(visualization_df2) <- rename
+visualization_df2_piv <- visualization_df2 |>
+    pivot_longer(cols = all_of(piv), names_to = "Variable",
+                 values_to = "Value") |>
+    merge(visualization_df_piv |> select(-Value), by = c("Year", "Variable"))
+p2a <- visualization_df2_piv |>
+    ggplot() +
+    geom_jitter(aes(x = Temp_Anomaly_deg_C, y = Value, color = Variable,
+                   shape = Average, alpha = 0.9, size = 2)) +
+    scale_x_continuous(breaks = seq(0, 1.1, 0.1), limits = c(0, 1.1)) +
+    facet_grid(vars(Variable), scales = "free_y") +
+    scale_y_continuous(limits = function(x){c(0, max(60, x))},
+                       breaks = function(x){seq(0, max(60, x),
+                                                max(round(60 / 6, 0),
+                                                    round_any(x, 300) / 6))}) +
+    labs(x = expression("Temp Anomalies ("*~degree*C*")"),
+         y = "Storm Count",
+         shape = "Moving Average") +
+    theme_minimal() +
+    theme(panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          strip.background =element_rect(fill = "white"),
+          strip.text = element_text(color = "black")) +
+    scale_color_manual(values = palette[c(2, 8)]) +
+    scale_shape_manual(values = c(19, 1)) +
+    guides(color = "none", alpha = "none", size = "none")
+title_str <- "Most Years Had Above Average Storm Counts, but There Is No Positive\nLinear Relationship Between Temp Anomalies & Storm Counts"
+title <- ggdraw() + 
+    draw_label(title_str)
+p2 <- plot_grid(title, p2a, ncol = 1, rel_heights = c(0.1, 1))
+p2
+
+```
+
+```{r vis4}
+gr <- c("grey", "darkgrey")
+causes <- as.data.frame(c("NC/SC",
+                          "FL",
+                          "OK",
+                          "MO"))
+colnames(causes) <- c("Cause")
+high <- visualization_df2_piv |>
+    filter(Variable == "Tornadoes") |>
+    mutate(High_Fatalities = ifelse(Tornado_Fatalities > 79, "Yes", "No")) |>
+    filter(High_Fatalities == "Yes") |>
+    bind_cols(causes)
+p3a <- visualization_df2_piv |>
+    filter(Variable == "Tornadoes") |>
+    mutate(High_Fatalities = ifelse(Tornado_Fatalities > 79, "Yes", "No")) |>
+    ggplot() +
+    geom_col(aes(x = Year, y = Tornado_Fatalities, color = High_Fatalities,
+                 fill = High_Fatalities)) +
+    geom_text(data = high, aes(x = Year + 0.5, y = Tornado_Fatalities + 20,
+                               label = Cause, color = High_Fatalities)) + 
+    scale_y_continuous(breaks = seq(0, 350, 50), limits = c(0, 400)) +
+    scale_x_continuous(breaks = seq(1980, 2020, 5), limits = c(1979, 2023)) +
+    labs(y = "Fatalities") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_blank()) +
+    scale_color_manual(values = c(gr[2], palette[6])) +
+    scale_fill_manual(values = c(gr[1], palette[5]))
+title_str <- "Tornadoes Kill Fewer than 80 People in Most Years, but Some Years\n Have Been Particularly Deadly with Big Outbreaks in Certain States"
+title <- ggdraw() + 
+    draw_label(title_str)
+p3 <- plot_grid(title, p3a, ncol = 1, rel_heights = c(0.1, 1))
+p3
+
+```
